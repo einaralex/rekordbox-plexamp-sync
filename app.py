@@ -189,172 +189,181 @@ def get_playlists() -> List[PlaylistObj]:
     return playlists_parsed
 
 
-pl = get_playlists()
+def main():
+    """Main entry point when run as CLI"""
+    if len(sys.argv) <= 2:
+        print('Please provide a valid URL and token')
+        print('Usage: python3 app.py <server url> <token> [--verbose|-v]')
+        sys.exit(0)
 
+    pl = get_playlists()
 
-if len(sys.argv) <= 2:
-    print('Please provide a valid URL and token')
-    print('Usage: python3 app.py <server url> <token> [--verbose|-v]')
-    sys.exit(0)
+    token = sys.argv[2]
+    server_url = sys.argv[1]
 
-token = sys.argv[2]
-server_url = sys.argv[1]
+    # Check for verbose flag - default is quiet
+    verbose = False  # Default to quiet
+    if '--verbose' in sys.argv or '-v' in sys.argv:
+        verbose = True
 
-# Check for verbose flag - default is quiet
-verbose = False  # Default to quiet
-if '--verbose' in sys.argv or '-v' in sys.argv:
-    verbose = True
+    plex = PlexServer(server_url, token)
 
-plex = PlexServer(server_url, token)
+    # Initialize logger with verbose flag
+    logger = Logger(verbose=verbose)
 
-# Initialize logger with verbose flag
-logger = Logger(verbose=verbose)
+    # Build maps ONCE at the start
+    track_map = build_plex_track_map(plex, logger)
+    playlist_map = build_plex_playlist_map(plex, logger)
 
-# Build maps ONCE at the start
-track_map = build_plex_track_map(plex, logger)
-playlist_map = build_plex_playlist_map(plex, logger)
+    logger.rekordbox_playlists_found(len(pl))
 
-logger.rekordbox_playlists_found(len(pl))
+    # Track changes for summary
+    created_playlists = []
+    updated_playlists = []
+    skipped_playlists = []
+    smart_playlists_skipped = []
+    not_found_tracks = []  # Track not found tracks for export
 
-# Track changes for summary
-created_playlists = []
-updated_playlists = []
-skipped_playlists = []
-smart_playlists_skipped = []
-not_found_tracks = []  # Track not found tracks for export
+    for p in logger.tqdm(pl, desc='Syncing playlists', unit='playlist'):
+        playlist_title = p['dj_md_playlist']['name']
 
-for p in logger.tqdm(pl, desc='Syncing playlists', unit='playlist'):
-    playlist_title = p['dj_md_playlist']['name']
+        # Skip smart playlists
+        smart_list_data = p['dj_md_playlist'].get('smart_list')
+        if smart_list_data and smart_list_data != '':
+            logger.skipping_smart_playlist(playlist_title)
+            smart_playlists_skipped.append(playlist_title)
+            continue
 
-    # Skip smart playlists
-    smart_list_data = p['dj_md_playlist'].get('smart_list')
-    if smart_list_data and smart_list_data != '':
-        logger.skipping_smart_playlist(playlist_title)
-        smart_playlists_skipped.append(playlist_title)
-        continue
+        logger.processing_playlist(playlist_title)
 
-    logger.processing_playlist(playlist_title)
+        if 'dj_md_contents' not in p or len(p['dj_md_contents']) == 0:
+            combined_title = '{}'.format(p['combined_name'])
+            logger.no_tracks_in_playlist(playlist_title)
+            skipped_playlists.append({'name': combined_title, 'reason': 'No tracks'})
+            continue
 
-    if 'dj_md_contents' not in p or len(p['dj_md_contents']) == 0:
         combined_title = '{}'.format(p['combined_name'])
-        logger.no_tracks_in_playlist(playlist_title)
-        skipped_playlists.append({'name': combined_title, 'reason': 'No tracks'})
-        continue
 
-    combined_title = '{}'.format(p['combined_name'])
+        logger.matching_tracks(len(p['dj_md_contents']))
+        tracks = []
 
-    logger.matching_tracks(len(p['dj_md_contents']))
-    tracks = []
+        for content in p['dj_md_contents']:
+            file_name = content['file_name_l']
+            folder_path = content['folder_path']
+            title = content['title']
 
-    for content in p['dj_md_contents']:
-        file_name = content['file_name_l']
-        folder_path = content['folder_path']
-        title = content['title']
+            # FAST LOOKUP - No Plex search needed!
+            track = track_map['by_filename'].get(file_name)
+            if not track and title:
+                track = track_map['by_title'].get(title.lower())
 
-        # FAST LOOKUP - No Plex search needed!
-        track = track_map['by_filename'].get(file_name)
-        if not track and title:
-            track = track_map['by_title'].get(title.lower())
+            if track:
+                tracks.append(track)
+            else:
+                full_path = f'{folder_path}/{file_name}' if folder_path else file_name
+                not_found_tracks.append(
+                    {
+                        'playlist': combined_title,
+                        'file_name': file_name,
+                        'full_path': full_path,
+                        'title': title,
+                    }
+                )
 
-        if track:
-            tracks.append(track)
+        # Show not found tracks for this playlist
+        playlist_not_found = [
+            nf for nf in not_found_tracks if nf['playlist'] == combined_title
+        ]
+        if playlist_not_found:
+            for nf in playlist_not_found:
+                logger.track_not_found(nf['file_name'], nf['title'], nf['full_path'])
+
+        # Get current track IDs
+        rekordbox_track_ids = [track.ratingKey for track in tracks]
+
+        # Check if playlist exists and needs updating
+        if combined_title in playlist_map:
+            existing_playlist_data = playlist_map[combined_title]
+            existing_playlist = existing_playlist_data['playlist']
+            existing_track_ids = existing_playlist_data['track_ids']
+
+            # Check if playlist is smart (can't modify smart playlists)
+            if existing_playlist.smart:
+                logger.skipping_plex_smart_playlist(combined_title)
+                smart_playlists_skipped.append(combined_title)
+                continue
+
+            # Compare playlists, they are only skipped if they're truly identical
+            if rekordbox_track_ids == existing_track_ids:
+                logger.playlist_up_to_date(combined_title, len(tracks))
+                skipped_playlists.append(
+                    {
+                        'name': combined_title,
+                        'tracks': len(tracks),
+                        'reason': 'Up to date',
+                    }
+                )
+                continue
+            else:
+                logger.playlist_updating(
+                    combined_title, len(existing_track_ids), len(tracks)
+                )
+
+                # Remove all tracks and re-add (batch operation for efficiency)
+                try:
+                    items_to_remove = existing_playlist.items()
+                    if items_to_remove:
+                        existing_playlist.removeItems(items_to_remove)
+                except Exception as e:
+                    logger.playlist_update_error(combined_title, e)
+
+                existing_playlist.addItems(tracks)
+                updated_playlists.append(
+                    {
+                        'name': combined_title,
+                        'old_tracks': len(existing_track_ids),
+                        'new_tracks': len(tracks),
+                        'added': len(tracks) - len(existing_track_ids),
+                    }
+                )
+                logger.playlist_updated(combined_title)
         else:
-            full_path = f'{folder_path}/{file_name}' if folder_path else file_name
-            not_found_tracks.append(
-                {
-                    'playlist': combined_title,
-                    'file_name': file_name,
-                    'full_path': full_path,
-                    'title': title,
-                }
-            )
+            logger.creating_playlist(combined_title, len(tracks))
+            plex.createPlaylist(title=combined_title, items=tracks)
+            created_playlists.append({'name': combined_title, 'tracks': len(tracks)})
+            logger.playlist_created(combined_title)
 
-    # Show not found tracks for this playlist
-    playlist_not_found = [
-        nf for nf in not_found_tracks if nf['playlist'] == combined_title
-    ]
-    if playlist_not_found:
-        for nf in playlist_not_found:
-            logger.track_not_found(nf['file_name'], nf['title'], nf['full_path'])
+    # Export not-found tracks to file
+    if not_found_tracks:
+        with open('not-found.json', 'w') as f:
+            json.dump(not_found_tracks, f, indent=2)
 
-    # Get current track IDs
-    rekordbox_track_ids = [track.ratingKey for track in tracks]
+    # Print summary
+    has_changes = created_playlists or updated_playlists or smart_playlists_skipped
 
-    # Check if playlist exists and needs updating
-    if combined_title in playlist_map:
-        existing_playlist_data = playlist_map[combined_title]
-        existing_playlist = existing_playlist_data['playlist']
-        existing_track_ids = existing_playlist_data['track_ids']
-
-        # Check if playlist is smart (can't modify smart playlists)
-        if existing_playlist.smart:
-            logger.skipping_plex_smart_playlist(combined_title)
-            smart_playlists_skipped.append(combined_title)
-            continue
-
-        # Compare playlists, they are only skipped if they're truly identical
-        if rekordbox_track_ids == existing_track_ids:
-            logger.playlist_up_to_date(combined_title, len(tracks))
-            skipped_playlists.append(
-                {'name': combined_title, 'tracks': len(tracks), 'reason': 'Up to date'}
-            )
-            continue
-        else:
-            logger.playlist_updating(
-                combined_title, len(existing_track_ids), len(tracks)
-            )
-
-            # Remove all tracks and re-add (batch operation for efficiency)
-            try:
-                items_to_remove = existing_playlist.items()
-                if items_to_remove:
-                    existing_playlist.removeItems(items_to_remove)
-            except Exception as e:
-                logger.playlist_update_error(combined_title, e)
-
-            existing_playlist.addItems(tracks)
-            updated_playlists.append(
-                {
-                    'name': combined_title,
-                    'old_tracks': len(existing_track_ids),
-                    'new_tracks': len(tracks),
-                    'added': len(tracks) - len(existing_track_ids),
-                }
-            )
-            logger.playlist_updated(combined_title)
+    if not has_changes:
+        logger.all_in_sync_header()
+        if not_found_tracks:
+            logger.not_found_tracks_exported(len(not_found_tracks))
+        logger.section_footer()
     else:
-        logger.creating_playlist(combined_title, len(tracks))
-        plex.createPlaylist(title=combined_title, items=tracks)
-        created_playlists.append({'name': combined_title, 'tracks': len(tracks)})
-        logger.playlist_created(combined_title)
+        logger.sync_summary_header()
 
-# Export not-found tracks to file
-if not_found_tracks:
-    with open('not-found.json', 'w') as f:
-        json.dump(not_found_tracks, f, indent=2)
+        logger.created_playlists_summary(created_playlists)
+        logger.updated_playlists_summary(updated_playlists)
+        logger.skipped_smart_playlists_summary(smart_playlists_skipped)
 
-# Print summary
-has_changes = created_playlists or updated_playlists or smart_playlists_skipped
+        total_processed = (
+            len(created_playlists)
+            + len(updated_playlists)
+            + len(skipped_playlists)
+            + len(smart_playlists_skipped)
+        )
+        logger.sync_complete(total_processed)
+        if not_found_tracks:
+            logger.not_found_tracks_exported(len(not_found_tracks))
+        logger.section_footer()
 
-if not has_changes:
-    logger.all_in_sync_header()
-    if not_found_tracks:
-        logger.not_found_tracks_exported(len(not_found_tracks))
-    logger.section_footer()
-else:
-    logger.sync_summary_header()
 
-    logger.created_playlists_summary(created_playlists)
-    logger.updated_playlists_summary(updated_playlists)
-    logger.skipped_smart_playlists_summary(smart_playlists_skipped)
-
-    total_processed = (
-        len(created_playlists)
-        + len(updated_playlists)
-        + len(skipped_playlists)
-        + len(smart_playlists_skipped)
-    )
-    logger.sync_complete(total_processed)
-    if not_found_tracks:
-        logger.not_found_tracks_exported(len(not_found_tracks))
-    logger.section_footer()
+if __name__ == '__main__':
+    main()

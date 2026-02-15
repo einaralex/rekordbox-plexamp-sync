@@ -1,0 +1,10 @@
+include library.so
+include library.h
+include *.png
+include requirements.txt
+include README.md
+include LICENSE
+include Makefile
+include main.go
+include go.mod
+include go.sum
