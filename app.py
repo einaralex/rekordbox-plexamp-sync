@@ -321,7 +321,9 @@ for p in logger.tqdm(pl, desc='Syncing playlists', unit='playlist'):
                     'added': len(tracks) - len(existing_track_ids),
                 }
             )
-            logger.playlist_updated(combined_title)
+            logger.playlist_updated(
+                combined_title, len(existing_track_ids), len(tracks)
+            )
     else:
         logger.creating_playlist(combined_title, len(tracks))
         plex.createPlaylist(title=combined_title, items=tracks)

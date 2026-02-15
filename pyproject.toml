@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rekordbox-plexamp-sync"
+version = "0.1.2"
+description = "Sync rekordbox playlists to Plexamp/Plex"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "Your Name", email = "your.email@example.com"}
+]
+keywords = ["rekordbox", "plex", "plexamp", "playlist", "sync", "music"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: MacOS :: MacOS X",
+    "Topic :: Multimedia :: Sound/Audio",
+]
+
+dependencies = [
+    "certifi>=2022.6.15",
+    "charset-normalizer>=2.1.0",
+    "idna>=3.3",
+    "PlexAPI>=4.12.1",
+    "requests>=2.28.1",
+    "tqdm>=4.65.0",
+    "urllib3>=1.26.11",
+]
+
+[project.optional-dependencies]
+dev = [
+    "build>=0.10.0",
+    "twine>=4.0.0",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+rekordbox-plexamp-sync = "rekordbox_plexamp_sync.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/yourusername/rekordbox-plexamp-sync"
+Repository = "https://github.com/yourusername/rekordbox-plexamp-sync"
+Issues = "https://github.com/yourusername/rekordbox-plexamp-sync/issues"
+
+[tool.setuptools]
+packages = ["rekordbox_plexamp_sync"]
+
+[tool.setuptools.package-data]
+rekordbox_plexamp_sync = ["*.so", "*.dylib"]

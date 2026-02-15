@@ -1,0 +1,5 @@
+include README.md
+include LICENSE
+include requirements.txt
+recursive-include rekordbox_plexamp_sync *.so
+recursive-include rekordbox_plexamp_sync *.dylib
