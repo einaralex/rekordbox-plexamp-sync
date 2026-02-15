@@ -45,7 +45,11 @@ func getPlaylists() *C.char {
 		panic(err)
 	}
 
-	optionsFilePath := filepath.Join(homeDir, "/Library/Application Support/Pioneer/rekordboxAgent/storage/", "options.json")
+	// Check for environment variable override, otherwise use default macOS path
+	optionsFilePath := os.Getenv("REKORDBOX_OPTIONS_PATH")
+	if optionsFilePath == "" {
+		optionsFilePath = filepath.Join(homeDir, "/Library/Application Support/Pioneer/rekordboxAgent/storage/", "options.json")
+	}
 
 	// Files and paths
 	client, err := rekordbox.NewClient(optionsFilePath)

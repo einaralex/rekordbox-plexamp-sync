@@ -85,10 +85,9 @@ rekordbox-plex-sync 'http://localhost:32400' 'token' --verbose
 
 Windows requires building the Go library as a DLL:
 
-1. Edit `main.go` and update rekordbox paths (see [go-rekordbox docs](https://github.com/dvcrn/go-rekordbox#usage)):
-   ```go
-   optionsFilePath := filepath.Join(homeDir, "YOUR_WINDOWS_PATH")
-   asarPath := "YOUR_WINDOWS_REKORDBOX_PATH"
+1. Set rekordbox path using environment variable (see [go-rekordbox docs](https://github.com/dvcrn/go-rekordbox#usage) for Windows paths):
+   ```bash
+   set REKORDBOX_OPTIONS_PATH=C:\path\to\your\options.json
    ```
 
 2. Build DLL:
@@ -188,8 +187,15 @@ pip install -e .
 - Disable content matchers for Albums in Plex
 - Check that filenames match between rekordbox and Plex
 
-**macOS paths different:**
-Edit `main.go` and update `optionsFilePath` and `asarPath` for your system.
+**Custom rekordbox paths:**
+Set the `REKORDBOX_OPTIONS_PATH` environment variable to override the default macOS path:
+```bash
+export REKORDBOX_OPTIONS_PATH="/path/to/your/options.json"
+python app.py 'http://localhost:32400' 'token'
+```
+
+Default path: `~/Library/Application Support/Pioneer/rekordboxAgent/storage/options.json`
+
 
 ## Acknowledgements
 
